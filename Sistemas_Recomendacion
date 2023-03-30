@@ -308,3 +308,227 @@ def MovieRecommender(movie_name = list(moviescompleta['title'].value_counts().in
     return movie_list_name
 
 print(interact(MovieRecommender))
+
+## *Sistema de recomendación filtro colaborativo basado en el usuario*:
+
+ratings.to_sql("usuarios",conn)
+conn=sql.connect('usuarios')
+cur=conn.cursor()
+ratings=pd.read_sql('select * from usuarios', conn)
+watcher = Reader(rating_scale=(0, 10))
+     
+
+data   = Dataset.load_from_df(ratings[['userId','movieId','rating']], watcher)
+     
+
+models=[KNNBasic(),KNNWithMeans(),KNNWithZScore(),KNNBaseline()] 
+results = {}
+     
+
+for model in models:
+ 
+    CV_scores = cross_validate(model, data, measures=["MAE","RMSE"], cv=5, n_jobs=-1)  
+    result = pd.DataFrame.from_dict(CV_scores).mean(axis=0).\
+             rename({'test_mae':'MAE', 'test_rmse': 'RMSE'})
+    results[str(model).split("algorithms.")[1].split("object ")[0]] = result
+
+
+performance_df = pd.DataFrame.from_dict(results).T
+performance_df.sort_values(by='RMSE')
+
+param_grid = { 'sim_options' : {'name': ['msd','cosine','pearson', 'pearson_baseline'], 
+                               'min_support': [1,3,5,7,9],         ### Vecinos minimos necesarios para realixar la predicción  ###Agregar mas agrupaciones
+                                'user_based': [False, True]}  ### Basado en usuario (True) o en el items/calificaciones (False)
+             }
+
+gridsearchKNNBasic = GridSearchCV(KNNBasic, param_grid, measures=['mae'], \
+                                      cv=2, n_jobs=2)
+                                    
+gridsearchKNNBasic.fit(data)
+
+gridsearchKNNBasic.best_params["mae"]
+
+gridsearchKNNBasic.best_score["mae"]
+
+## *Sistema de recomendación por filtros y contenidos*
+
+Creamos una función llamada show_recommendations() que se ejecuta cada vez que se selecciona un usuario en la lista desplegable. Esta función utiliza el ID del usuario seleccionado para obtener las 15 películas con la calificación más alta para ese usuario y las muestra en la pantalla.
+
+Finalmente, asociamos la función show_recommendations() a la lista desplegable de usuarios utilizando el método observe() de ipywidgets.
+
+import sqlite3
+import ipywidgets as widgets
+from IPython.display import display
+
+# Conectar a la base de datos
+conn = sql.connect('/content/drive/MyDrive/Analitica 3/Marketing/BD/db_movies')
+
+# Obtener la lista de usuarios
+cursor = conn.cursor()
+cursor.execute("SELECT DISTINCT UserId FROM ratings")
+users = sorted([str(row[0]) for row in cursor.fetchall()])
+
+# Crear la lista desplegable de usuarios
+user_dropdown = widgets.Dropdown(options=users, description='Usuario:')
+
+# Crear el widget de texto para mostrar las recomendaciones
+recommendations_text = widgets.HTML()
+
+# Función para mostrar las recomendaciones para el usuario seleccionado
+def show_recommendations(sender):
+    # Obtener el ID del usuario seleccionado
+    user_id = user_dropdown.value
+    
+    # Obtener las recomendaciones para el usuario
+    cursor = conn.cursor()
+    cursor.execute("SELECT title FROM movies WHERE movieId IN ({})".format(
+        "SELECT movieId FROM ratings WHERE UserId = {} ORDER BY rating DESC LIMIT 15".format(user_id)))
+    recommendations = [row[0] for row in cursor.fetchall()]
+
+    # Crear una cadena HTML que contenga las recomendaciones
+    html = "<ul>"
+    for title in recommendations:
+        html += "<li>{}</li>".format(title)
+    html += "</ul>"
+    
+    # Actualizar el widget de texto con las recomendaciones
+    recommendations_text.value = html
+
+# Asociar la función show_recommendations a la lista desplegable de usuarios
+user_dropdown.observe(show_recommendations, 'value')
+
+# Mostrar la lista desplegable de usuarios y el widget de texto de recomendaciones
+display(user_dropdown)
+display(recommendations_text)
+
+import sqlite3
+import pandas as pd
+import ipywidgets as widgets
+from IPython.display import display
+
+# Conectar a la base de datos
+conn = sql.connect('/content/drive/MyDrive/Analitica 3/Marketing/BD/db_movies')
+
+# Obtener la lista de películas
+movies = pd.read_sql_query("SELECT * FROM movies", conn)
+movie_dropdown = widgets.Dropdown(options=list(movies['title']), description='Película:')
+
+# Crear la tabla para mostrar las películas similares
+similar_movies_table = widgets.HTML()
+
+# Función para mostrar las películas similares a la película seleccionada
+def show_similar_movies(sender):
+    # Obtener la película seleccionada
+    movie_title = movie_dropdown.value
+    
+    # Obtener las películas similares
+    def content_based_recommendation(movie_id, top_n=15):
+    # Obtener los vectores de características de la película seleccionada
+      query = '''
+        SELECT features
+        FROM movie_features
+        WHERE movieId = ?
+      '''
+      cur.execute(query, (movie_id,))
+      selected_features = cur.fetchone()[0]
+
+    # Calcular la similitud entre la película seleccionada y todas las demás películas
+      query = '''
+        SELECT movieId, features
+        FROM movie_features
+    '''
+      cur.execute(query)
+      similarities = []
+    for row in cur.fetchall():
+        movie_id, features = row
+        similarity = cosine_similarity(selected_features, features)
+        similarities.append((movie_id, similarity))
+
+    # Ordenar las películas por similitud y devolver las top_n más similares
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    recommendations = similarities[1:top_n+1]
+    return recommendations
+    @app.route('/content-based-recommendation')
+    def content_based():
+    # Obtener una lista de todas las películas
+      query = '''
+        SELECT movieId, title
+        FROM movies
+        ORDER BY title ASC
+      '''
+      cur.execute(query)
+      movies = cur.fetchall()
+
+    # Mostrar una lista desplegable de todas las películas
+      html = '''
+        <form>
+            <div class="form-group">
+                <label for="movie-select">Selecciona una película:</label>
+                <select class="form-control" id="movie-select" name="movie_id">
+      '''
+      for movie in movies:
+        html += f'<option value="{movie[0]}">{movie[1]}</option>'
+      html += '''
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Obtener recomendaciones</button>
+        </form>
+    '''
+
+    # Si se ha enviado el formulario, obtener las recomendaciones y mostrarlas
+    if 'movie_id' in request.args:
+        movie_id = int(request.args['movie_id'])
+        recommendations = content_based_recommendation(movie_id)
+        html += '<h2>Recomendaciones:</h2>'
+        for rec in recommendations:
+            html += f'<p>{get_movie_title(rec[0])}</p>'
+
+    return html
+    print(similar_movies)
+
+
+import sqlite3
+
+# Conectar a la base de datos
+conn = sql.connect('/content/drive/MyDrive/Analitica 3/Marketing/BD/db_movies')
+c = conn.cursor()
+
+# Seleccionar los géneros
+c.execute("SELECT genres FROM movies")
+genres = c.fetchall()
+
+# Crear un conjunto de géneros únicos
+unique_genres = set()
+for g in genres:
+    for genre in g[0].split('|'):
+        unique_genres.add(genre)
+
+# Convertir el conjunto de géneros únicos en una lista
+unique_genres = list(unique_genres)
+
+# Mostrar los géneros únicos
+print("Lista de géneros disponibles:")
+for i, genre in enumerate(unique_genres):
+    print(f"{i+1}. {genre}")
+
+# Seleccionar el género
+genre_num = int(input("Seleccione el número correspondiente al género: "))
+selected_genre = unique_genres[genre_num - 1]
+
+# Mostrar las películas recomendadas
+c.execute("""
+    SELECT m.title, AVG(r.rating) AS avg_rating
+    FROM movies m
+    JOIN ratings r ON m.movieId = r.movieId
+    WHERE m.genres LIKE ?
+    GROUP BY m.movieId
+    ORDER BY avg_rating DESC
+    LIMIT 10
+""", ('%'+selected_genre+'%',))
+
+recommended_movies = c.fetchall()
+print(f"\nLas 10 películas más recomendadas del género '{selected_genre}':")
+for movie in recommended_movies:
+    print(f"- {movie[0]} (rating promedio: {movie[1]:.2f})")
+    
+
