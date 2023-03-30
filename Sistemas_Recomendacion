@@ -219,3 +219,72 @@ fig.update_layout(
     yaxis_title = '<b>Cantidad de usuarios<b>',
 )
 fig.show()
+
+##SISTEMA DE RECOMENDACIÓN DE CONTENIDO GENERAL##
+#juntar tablas 
+moviescompleta =pd.read_sql("""SELECT movies.movieId,title,
+                            avg(ratings.rating) as avg_rat,
+                            COUNT(ratings.movieId) as vistas,
+                            movies.genres FROM movies
+                            INNER JOIN ratings 
+                            ON movies.movieId = ratings.movieId
+                            GROUP BY ratings.movieId
+                            ORDER BY vistas DESC
+                            ;""", conn)
+moviescompleta.head(10)
+
+#verificar que no se dupliquen ###Pero se vuelve a cambiar la fecha####
+moviescompleta.duplicated().sum()
+
+moviescompleta.info()
+
+import re
+def clean_title(title):
+    return re.sub("[\(\[].*?[\)\]]", "",title)
+
+def genre(series):
+    genres = series.index[6:-2]
+    
+    text = []
+    for i in genres:
+        if series[i] == 1:
+            text.append(i)
+            break
+    return ", ".join(text)
+
+moviescompleta["title"] = moviescompleta["title"].apply(clean_title)
+
+moviescompleta["title"].unique()
+
+#Separar los géneros en categorías 
+from mlxtend.preprocessing import TransactionEncoder
+genres_1=moviescompleta['genres'].str.split('|')
+te =  TransactionEncoder()
+genres_1 =te.fit_transform(genres_1)
+genres_1 = pd.DataFrame(genres_1, columns = te.columns_)
+
+#Juntar los generos a la tabla completa
+moviescompleta_1=pd.concat([moviescompleta,genres_1], axis=1)
+del moviescompleta_1['genres']
+moviescompleta_1
+
+## *Sistema de recomendación filtro colaborativo basado en la pelicula*
+
+movie='Toy Story '
+ind_movie=moviescompleta[moviescompleta['title']==movie].index.values.astype(int)[0] ##Indice del libro
+correlaciones=genres_1.corrwith(genres_1.iloc[ind_movie,:],axis=1) ##Matriz de correlaciones
+correlaciones.sort_values(ascending=False)
+
+def recomendacion(movie = list(moviescompleta['title'].unique())):
+     
+    ind_movie=moviescompleta[moviescompleta['title']==movie].index.values.astype(int)[0]
+    similar_movie = genres_1.corrwith(genres_1.iloc[ind_movie,:],axis=1)
+    similar_movie = similar_movie.sort_values(ascending=False)
+    top_similar_movie=similar_movie.to_frame(name="correlación").iloc[0:11,]
+    top_similar_movie['title']=moviescompleta["title"]
+    
+    return top_similar_movie
+
+from ipywidgets import interact ## para análisis interactivo
+
+print(interact(recomendacion))
