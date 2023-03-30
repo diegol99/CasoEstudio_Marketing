@@ -288,3 +288,23 @@ def recomendacion(movie = list(moviescompleta['title'].unique())):
 from ipywidgets import interact ## para análisis interactivo
 
 print(interact(recomendacion))
+## *Sistema de recomendación basado en contenido KNN*:
+
+from sklearn import neighbors
+from ipywidgets import interact
+model = neighbors.NearestNeighbors(n_neighbors=11, metric='cosine')
+model.fit(genres_1)
+dist, idlist = model.kneighbors(genres_1)
+
+distancias=pd.DataFrame(dist)
+id_list=pd.DataFrame(idlist)
+movie_name='Toy Story '
+def MovieRecommender(movie_name = list(moviescompleta['title'].value_counts().index)):
+    movie_list_name = []
+    movie_id = genres_1[moviescompleta['title'] == movie_name].index
+    movie_id = movie_id[0]
+    for newid in idlist[movie_id]:
+        movie_list_name.append(moviescompleta.loc[newid].title)
+    return movie_list_name
+
+print(interact(MovieRecommender))
