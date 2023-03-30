@@ -1,0 +1,221 @@
+## *Lectura de Datos*:
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+import numpy as np
+import pandas as pd
+import sqlite3 as sql
+import plotly.graph_objects as go ## Para gráficos
+import os
+
+#os.getcwd()
+#os.chdir('D:\Aplicaciones de la analítica\Proyecto marketing')
+
+# Para ejecutar sql y conectarse a bd
+
+conn = sql.connect('/content/drive/MyDrive/Analitica 3/Marketing/BD/db_movies') ## Crear cuando no existe el nombre cd y conectarse cuando si existe
+cur=conn.cursor() # Para funciones que ejecutan sql en base de datos
+cur.execute ("SELECT name FROM sqlite_master Where type = 'table';")
+print(cur.fetchall())
+##*Analisis Exploratorio*:
+
+movies = pd.read_sql('SELECT * FROM movies', conn)
+ratings = pd.read_sql('SELECT * FROM ratings', conn)
+
+ratings
+
+from datetime import datetime
+ts = int("1584101485")
+
+# Date only
+print(datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d'))
+def datefromtimestamp(timestamp):
+    date = datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y')
+    return date
+
+ratings["timestamp"] = ratings["timestamp"].apply(lambda x: datefromtimestamp(x))
+ratings["timestamp"] = pd.to_datetime(ratings["timestamp"])
+
+#Se revisa si hay datos nulos en la columna de titulos
+pd.read_sql('SELECT COUNT(*) as ValoresNull FROM movies WHERE title IS NULL;', conn)
+
+#Se revisa si hay datos nulos en la columna de generos
+pd.read_sql('SELECT COUNT(*) as ValNull FROM movies WHERE genres IS NULL;', conn)
+
+#Se revisa si hay calificaciones nulas
+pd.read_sql('SELECT COUNT(*) as RaNull FROM ratings WHERE rating IS NULL;', conn) 
+
+#Se revisa si hay datos nulos en la columna 
+pd.read_sql('SELECT COUNT(*) Ranull FROM ratings WHERE movieId IS NULL;', conn) 
+
+#Cuántos registros tiene movies
+pd.read_sql('SELECT COUNT(*) as registros FROM movies', conn)
+
+#Cuántos registros tiene ratings
+pd.read_sql('SELECT COUNT(*) as registros FROM ratings', conn)
+
+##Genero más visto
+genvistas = pd.read_sql("""SELECT genres,COUNT(ratings.movieId) as Vistas FROM movies
+                            INNER JOIN ratings 
+                            ON movies.movieId = ratings.movieId
+                            GROUP BY ratings.movieId
+                            ORDER BY vistas DESC
+                            LIMIT 10;""", conn)
+print(genvistas)
+
+#### verificar cuantas calificaciones tiene cada pelicula
+rating_movies=pd.read_sql(''' SELECT rating, COUNT(*) AS count
+FROM ratings
+GROUP BY rating  ''',conn )
+rating_movies
+#####Distribución de calificaciones de las películas:
+###Para visualizar cómo se distribuyen las calificaciones de las películas en la base de datos "ratings", puedes utilizar la siguiente consulta:
+
+# Conectar a la base de datos
+import matplotlib.pyplot as plt
+conn = sql.connect('/content/drive/MyDrive/Analitica 3/Marketing/BD/db_movies')
+
+# Realizar la consulta
+cursor = conn.cursor()
+cursor.execute("SELECT rating, COUNT(*) AS count FROM ratings GROUP BY rating")
+data = cursor.fetchall()
+
+# Crear el gráfico de barras
+x = [row[0] for row in data]
+y = [row[1] for row in data]
+plt.bar(x, y)
+plt.xlabel('Calificación')
+plt.ylabel('Número de calificaciones')
+plt.title('Distribución de calificaciones de las películas')
+plt.show()
+
+conn = sql.connect('/content/drive/MyDrive/Analitica 3/Marketing/BD/db_movies')
+cursor = conn.cursor()
+cursor.execute("SELECT r.rating, r.timestamp FROM ratings r INNER JOIN movies m ON m.movieId = r.movieId WHERE m.genres LIKE '%Drama%'")
+data = cursor.fetchall()
+
+# Crear el gráfico de dispersión
+x = [row[1] for row in data]
+y = [row[0] for row in data]
+plt.scatter(x, y, alpha=0.5)
+plt.xlabel('Timestamp')
+plt.ylabel('Calificación')
+plt.title('Relación entre calificaciones y tiempo para películas de drama')
+plt.show()
+
+## *Sistemas de recomendación basado en popularidad*
+
+##Peliculas más vistas con su promedio de calificación 
+Movievistas = pd.read_sql("""SELECT title,
+                            avg(ratings.rating) as avg_rat,
+                            COUNT(ratings.movieId) as vistas FROM movies
+                            INNER JOIN ratings 
+                            ON movies.movieId = ratings.movieId
+                            GROUP BY ratings.movieId
+                            ORDER BY vistas DESC
+                            LIMIT 10;""", conn)
+print(Movievistas)
+
+## 10 Generos Más calificado
+gencal = pd.read_sql("""SELECT genres,count(ratings.rating) as MasCalif FROM movies
+                            INNER JOIN ratings 
+                            ON movies.movieId = ratings.movieId
+                            GROUP BY genres
+                            ORDER BY MasCalif DESC
+                            LIMIT 10;""", conn)
+print(gencal)
+
+##Genero con mejor calificacion
+genecal = pd.read_sql("""SELECT genres,Avg(ratings.rating) as MejorCalif FROM movies
+                            INNER JOIN ratings 
+                            ON movies.movieId = ratings.movieId
+                            GROUP BY genres
+                            ORDER BY MejorCalif DESC
+                            LIMIT 10;""", conn)
+print(genecal)
+
+## 10 peliculas mejor calificadas
+topdiezmovie = pd.read_sql("""SELECT title,Avg(ratings.rating) as MejorCalif FROM movies
+                            INNER JOIN ratings 
+                            ON movies.movieId = ratings.movieId
+                            GROUP BY genres
+                            ORDER BY MejorCalif DESC
+                            LIMIT 10;""", conn)
+print(topdiezmovie)
+
+## Serie de tiempo de las vistas de las peliculas
+import plotly.express as px
+ratings["timestamp"] = ratings["timestamp"].dt.year
+retfecha= ratings.groupby(["timestamp"])[["userId"]].count().reset_index()
+fig = px.line(retfecha, x='timestamp', y =['userId'], title = '<b>Vistas de peliculas a traves del tiempo<b>',
+              color_discrete_sequence=px.colors.qualitative.G10)
+fig.update_layout(
+    template = 'simple_white',
+    title_x = 0.5,
+   legend_title = 'Usuarios',
+    xaxis_title = '<b>Fecha<b>',
+    yaxis_title = '<b>Cantidad de usuarios<b>',
+)
+fig.show()
+
+##Usuarios si vieron más de una pelicula
+vistasusuario = pd.read_sql("""SELECT userId, COUNT(DISTINCT movieID) as NumVistas FROM ratings
+                            GROUP BY userId
+                            ORDER BY NumVistas DESC
+                            LIMIT 10;""", conn)
+print(vistasusuario)
+
+##Promedio de calificación por Usuario
+vistasusuario = pd.read_sql("""SELECT userId, COUNT(DISTINCT movieId) as NumVistas, 
+                            Avg(ratings.rating) as PromCalif FROM ratings
+                            GROUP BY userId
+                            HAVING NumVistas  
+                            ORDER BY PromCalif DESC
+                            LIMIT 10;""", conn)
+print(vistasusuario)
+
+##En que año se estrenaron las peliculas, y cuales fueron mejor calificadas 
+estreno = pd.read_sql("""SELECT SUBSTR(title, -1, -4) as ano_estreno, SUBSTR(title, -7,-60) as titulo,
+                          avg(ratings.rating) as avg_rat,
+                          COUNT(ratings.movieId) as vistas FROM movies
+                          INNER JOIN ratings 
+                          ON movies.movieId = ratings.movieId
+                          GROUP BY ano_estreno
+                          HAVING vistas >= 50
+                          ORDER BY avg_rat DESC
+                          LIMIT 10;""", conn)
+print(estreno)
+
+## *Serie de tiempo*
+
+from datetime import datetime
+ts = int("1584101485")
+
+# Date only
+print(datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d'))
+def datefromtimestamp(timestamp):
+    date = datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y')
+    return date
+
+movies = pd.read_sql('SELECT * FROM movies', conn)
+ratings = pd.read_sql('SELECT * FROM ratings', conn)
+
+ratings["timestamp"] = ratings["timestamp"].apply(lambda x: datefromtimestamp(x))
+ratings["timestamp"] = pd.to_datetime(ratings["timestamp"])
+
+## Serie de tiempo de los meses en que más se ven peliculas ### si da, sino que toca correr de nuevo la función de la fecha, 
+##creo que la de los años la daña
+import plotly.express as px
+ratings["timestamp"] = ratings["timestamp"].dt.month
+retfecha= ratings.groupby(["timestamp"])[["userId"]].count().reset_index()
+fig = px.line(retfecha, x='timestamp', y =['userId'], title = '<b>Vistas de películas mensuales<b>',
+              color_discrete_sequence=px.colors.qualitative.G10)
+fig.update_layout(
+    template = 'simple_white',
+    title_x = 0.5,
+   legend_title = 'Usuarios',
+    xaxis_title = '<b>Fecha<b>',
+    yaxis_title = '<b>Cantidad de usuarios<b>',
+)
+fig.show()
