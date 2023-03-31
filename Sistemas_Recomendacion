@@ -104,6 +104,38 @@ plt.ylabel('Calificación')
 plt.title('Relación entre calificaciones y tiempo para películas de drama')
 plt.show()
 
+## *Serie de tiempo*
+
+from datetime import datetime
+ts = int("1584101485")
+
+# Date only
+print(datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d'))
+def datefromtimestamp(timestamp):
+    date = datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y')
+    return date
+
+movies = pd.read_sql('SELECT * FROM movies', conn)
+ratings = pd.read_sql('SELECT * FROM ratings', conn)
+
+ratings["timestamp"] = ratings["timestamp"].apply(lambda x: datefromtimestamp(x))
+ratings["timestamp"] = pd.to_datetime(ratings["timestamp"])
+
+## Serie de tiempo de los meses en que más se ven peliculas 
+import plotly.express as px
+ratings["timestamp"] = ratings["timestamp"].dt.month
+retfecha= ratings.groupby(["timestamp"])[["userId"]].count().reset_index()
+fig = px.line(retfecha, x='timestamp', y =['userId'], title = '<b>Vistas de películas mensuales<b>',
+              color_discrete_sequence=px.colors.qualitative.G10)
+fig.update_layout(
+    template = 'simple_white',
+    title_x = 0.5,
+   legend_title = 'Usuarios',
+    xaxis_title = '<b>Fecha<b>',
+    yaxis_title = '<b>Cantidad de usuarios<b>',
+)
+fig.show()
+
 ## *Sistemas de recomendación basado en popularidad*
 
 ##Peliculas más vistas con su promedio de calificación 
@@ -186,39 +218,6 @@ estreno = pd.read_sql("""SELECT SUBSTR(title, -1, -4) as ano_estreno, SUBSTR(tit
                           ORDER BY avg_rat DESC
                           LIMIT 10;""", conn)
 print(estreno)
-
-## *Serie de tiempo*
-
-from datetime import datetime
-ts = int("1584101485")
-
-# Date only
-print(datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d'))
-def datefromtimestamp(timestamp):
-    date = datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y')
-    return date
-
-movies = pd.read_sql('SELECT * FROM movies', conn)
-ratings = pd.read_sql('SELECT * FROM ratings', conn)
-
-ratings["timestamp"] = ratings["timestamp"].apply(lambda x: datefromtimestamp(x))
-ratings["timestamp"] = pd.to_datetime(ratings["timestamp"])
-
-## Serie de tiempo de los meses en que más se ven peliculas ### si da, sino que toca correr de nuevo la función de la fecha, 
-##creo que la de los años la daña
-import plotly.express as px
-ratings["timestamp"] = ratings["timestamp"].dt.month
-retfecha= ratings.groupby(["timestamp"])[["userId"]].count().reset_index()
-fig = px.line(retfecha, x='timestamp', y =['userId'], title = '<b>Vistas de películas mensuales<b>',
-              color_discrete_sequence=px.colors.qualitative.G10)
-fig.update_layout(
-    template = 'simple_white',
-    title_x = 0.5,
-   legend_title = 'Usuarios',
-    xaxis_title = '<b>Fecha<b>',
-    yaxis_title = '<b>Cantidad de usuarios<b>',
-)
-fig.show()
 
 ##SISTEMA DE RECOMENDACIÓN DE CONTENIDO GENERAL##
 #juntar tablas 
